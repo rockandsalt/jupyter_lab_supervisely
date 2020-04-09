@@ -1,0 +1,5 @@
+__pycache__/
+supervisely_lib/
+
+.ipynb_checkpoints/
+
