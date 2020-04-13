@@ -147,12 +147,12 @@ def remove_padding(regions,boundary_faces):
 
     return regions
 
-def watershed_seg(bin_im, size=np.ones((3, 3, 3)), sigma=0.4):
+def watershed_seg(bin_im, size=np.ones((3, 3, 3)), sigma=0.4, peak_threshold = 0.5):
 
     edt = spim.distance_transform_edt(bin_im)
     edt = spim.gaussian_filter(input=edt, sigma=sigma)
     local_maxi = feature.peak_local_max(
-        edt, indices=False, footprint=size, labels=bin_im)
+        edt, indices=False, footprint=size, threshold_rel = peak_threshold, labels=bin_im)
 
     markers = spim.label(local_maxi)[0]
     labels = morphology.watershed(-edt, markers, mask=bin_im)
