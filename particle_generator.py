@@ -88,7 +88,7 @@ def insert_shape(im, element, center=None, corner=None, value=1,
 
 
 def RSA(im: array, radius: int, volume_fraction: int = 1,
-        mode: str = 'extended'):
+        mode: str = 'extended', callback: object = None):
     r"""
     Generates a sphere or disk packing using Random Sequential Addition
 
@@ -176,12 +176,18 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
             [x, y] = free_spots[choice].flatten()
             im = _fit_strel_to_im_2d(im, im_strel, radius, x, y)
             mask = _fit_strel_to_im_2d(mask, mask_strel, mrad, x, y)
-            im[x, y] = 2
+
+            if(callback is not None):
+                callback(im_strel, radius, x, y)
+
         else:
             [x, y, z] = free_spots[choice].flatten()
             im = _fit_strel_to_im_3d(im, im_strel, radius, x, y, z)
             mask = _fit_strel_to_im_3d(mask, mask_strel, mrad, x, y, z)
-            im[x, y, z] = 2
+
+            if(callback is not None):
+                callback(im_strel, radius, x, y, z)
+
         free_spots = sp.argwhere(mask == 0)
         vf = im.sum()/im.size
         i += 1
