@@ -5,7 +5,52 @@ import scipy.ndimage as spim
 from porespy.tools import norm_to_uniform, ps_ball, ps_disk
 from typing import List
 from numpy import array
+import numpy as np
 
+from skimage import measure
+from skimage import feature
+from numpy import random
+
+def add_hole(particle, n_hole = 1):
+    n_p = particle.copy()
+    edt = spim.morphology.distance_transform_edt(n_p)
+
+    peaks = feature.peak_local_max(edt, num_peaks=n_hole)
+
+    for c in peaks:
+        radius = int(edt[tuple(c)]/2)
+
+        if radius >= 1:
+            n_p = insert_shape(n_p, ps_disk(radius), center = tuple(c), value = 0)
+    
+    return n_p
+
+
+def non_circular_particle(shape, porosity = 0.5, blobiness = 1, holes_p = 0.1, callback = None):
+    blob_im = blobs(shape, porosity, blobiness)
+
+    labelled_array, num_label = measure.label(blob_im, return_num = True, connectivity=blob_im.ndim)
+
+    region_prop = measure.regionprops(labelled_array)
+
+    im = np.zeros(shape, dtype = bool)
+
+    for reg in region_prop:
+
+        id = reg.label
+        particle_mask = reg.image.copy()
+        particle_origin = reg.bbox[:2]
+
+        bool_hole = random.binomial(1, holes_p)
+
+        if(bool_hole):
+            particle_mask = add_hole(particle_mask)
+        im = insert_shape(im, particle_mask, corner=particle_origin, value = 1)
+
+        if callback is not None:
+            callback(reg.image, particle_origin, bool_hole)
+    
+    return im
 
 def insert_shape(im, element, center=None, corner=None, value=1,
                  mode='overwrite'):
@@ -142,8 +187,6 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
     # Note: The 2D vs 3D splitting of this just me being lazy...I can't be
     # bothered to figure it out programmatically right now
     # TODO: Ideally the spheres should be added periodically
-    print(78*'―')
-    print('RSA: Adding spheres of size ' + str(radius))
     d2 = len(im.shape) == 2
     mrad = 2*radius
     if d2:
@@ -191,10 +234,7 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
         free_spots = sp.argwhere(mask == 0)
         vf = im.sum()/im.size
         i += 1
-    if vf > volume_fraction:
-        print('Volume Fraction', volume_fraction, 'reached')
-    if len(free_spots) == 0:
-        print('No more free spots', 'Volume Fraction', vf)
+
     return im
 
 
