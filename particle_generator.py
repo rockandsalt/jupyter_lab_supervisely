@@ -12,7 +12,8 @@ from skimage import feature
 from skimage import morphology
 from numpy import random
 
-def add_hole(particle, n_hole = 1):
+
+def add_hole(particle, n_hole=1):
     n_p = particle.copy()
     edt = spim.morphology.distance_transform_edt(n_p)
 
@@ -22,54 +23,30 @@ def add_hole(particle, n_hole = 1):
         radius = int(edt[tuple(c)]/2)
 
         if(particle.ndim == 2):
-            str_elem = ps_disk(radius)
+            str_elem = np.logical_not(ps_disk(radius))
         else:
-            str_elem = ps_ball(radius)
+            str_elem = np.logical_not(ps_ball(radius))
 
         if radius >= 1:
-            n_p = insert_shape(n_p, str_elem, center = tuple(c), value = 0)
-    
+            n_p = insert_shape(n_p, str_elem, center=tuple(c), value=1)
+
     return n_p
 
-def metaball_particle_2d(radius, n_meta_ball, meta_ball_radius, holes_p):
+
+def metaball_particle_2d(radius, n_meta_ball, meta_ball_radius):
     shape = (radius*2, radius*2)
-    def func():
+
+    def func(bool_hole):
         potential_field = np.zeros(shape)
         ids = np.indices(shape)
         for _ in range(n_meta_ball):
             x = random.randint(meta_ball_radius, shape[0] - meta_ball_radius)
             y = random.randint(meta_ball_radius, shape[1] - meta_ball_radius)
 
-            potential_field += meta_ball_radius**2/((ids[0,...]-x)**2 + (ids[1,...]-y)**2)
+            potential_field += meta_ball_radius**2 / \
+                ((ids[0, ...]-x)**2 + (ids[1, ...]-y)**2)
 
         particle_n_hole = morphology.convex_hull_image(potential_field >= 1)
-
-        bool_hole = random.binomial(1, holes_p)
-
-        if(bool_hole):
-            particle_w_hole = add_hole(particle_n_hole)
-        else:
-            particle_w_hole = particle_n_hole
-
-        return particle_n_hole, particle_w_hole
-    
-    return func
-
-def metaball_particle_3d(radius, n_meta_ball, meta_ball_radius, holes_p):
-    shape = (radius*2, radius*2, radius*2)
-    def func():
-        potential_field = np.zeros(shape)
-        ids = np.indices(shape)
-        for _ in range(n_meta_ball):
-            x = random.randint(meta_ball_radius, shape[0] - meta_ball_radius)
-            y = random.randint(meta_ball_radius, shape[1] - meta_ball_radius)
-            z = random.randint(meta_ball_radius, shape[2] - meta_ball_radius)
-
-            potential_field += meta_ball_radius**2/((ids[0,...]-x)**2 + (ids[1,...]-y)**2 + (ids[2,...]-z)**2)
-
-        particle_n_hole = morphology.convex_hull_image(potential_field >= 1)
-
-        bool_hole = random.binomial(1, holes_p)
 
         if(bool_hole):
             particle_w_hole = add_hole(particle_n_hole)
@@ -77,11 +54,40 @@ def metaball_particle_3d(radius, n_meta_ball, meta_ball_radius, holes_p):
             particle_w_hole = particle_n_hole
 
         return particle_w_hole, particle_n_hole
-    
+
     return func
 
-def non_circular_particle(im, particle_max_r, volume_fraction = 0.5, holes_p = 0.5, n_meta_ball = 3, meta_ball_radius = None, mode = 'extended', callback = None):
-    
+
+def metaball_particle_3d(radius, n_meta_ball, meta_ball_radius):
+    shape = (radius*2, radius*2, radius*2)
+
+    def func(bool_hole):
+        potential_field = np.zeros(shape)
+        ids = np.indices(shape)
+        for _ in range(n_meta_ball):
+            x = random.randint(meta_ball_radius, shape[0] - meta_ball_radius)
+            y = random.randint(meta_ball_radius, shape[1] - meta_ball_radius)
+            z = random.randint(meta_ball_radius, shape[2] - meta_ball_radius)
+
+            potential_field += meta_ball_radius**2 / \
+                ((ids[0, ...]-x)**2 + (ids[1, ...]-y)**2 + (ids[2, ...]-z)**2)
+
+        particle_n_hole = morphology.convex_hull_image(potential_field >= 1)
+
+        if(bool_hole):
+            particle_w_hole = add_hole(particle_n_hole)
+        else:
+            particle_w_hole = particle_n_hole
+
+        return particle_w_hole, particle_n_hole
+
+    return func
+
+
+def non_circular_particle(im, particle_max_r, volume_fraction=0.5, 
+                          holes_p=0.5, n_meta_ball=3, meta_ball_radius=None, mask = None,
+                          mode='extended', return_no_hole_mask = True, callback=None):
+
     d2 = im.ndim == 2
     mrad = 2*particle_max_r
 
@@ -89,19 +95,27 @@ def non_circular_particle(im, particle_max_r, volume_fraction = 0.5, holes_p = 0
         meta_ball_radius = int(particle_max_r/3)
 
     if d2:
-        im_strel = metaball_particle_2d(particle_max_r, n_meta_ball, meta_ball_radius, holes_p)
+        im_strel = metaball_particle_2d(
+            particle_max_r, n_meta_ball, meta_ball_radius)
         mask_strel = ps_disk(mrad)
     else:
-        im_strel = metaball_particle_3d(particle_max_r, n_meta_ball, meta_ball_radius, holes_p)
+        im_strel = metaball_particle_3d(
+            particle_max_r, n_meta_ball, meta_ball_radius)
         mask_strel = ps_ball(mrad)
-    
-    if sp.any(im > 0):
+
+    if sp.any(im > 0) or (mask is not None):
+        if mask is None:
+            mask = im.copy()
+            no_hole_mask = im.copy()
+        else:
+            no_hole_mask = mask.copy()
         # Dilate existing objects by im_strel to remove pixels near them
         # from consideration for sphere placement
-        mask = ps.tools.fftmorphology(im > 0, mask_strel > 0, mode='dilate')
+        mask = ps.tools.fftmorphology(mask > 0, mask_strel > 0, mode='dilate')
         mask = mask.astype(int)
     else:
         mask = sp.zeros_like(im)
+        no_hole_mask = sp.zeros_like(im)
     if mode == 'contained':
         mask = _remove_edge(mask, particle_max_r)
     elif mode == 'extended':
@@ -112,13 +126,13 @@ def non_circular_particle(im, particle_max_r, volume_fraction = 0.5, holes_p = 0
         raise Exception('Unrecognized mode: ' + mode)
     vf = im.sum()/im.size
     i = 0
-    
-    free_spots = sp.argwhere(mask == 0)
 
-    padding = particle_max_r
+    padding = int(particle_max_r*2)
 
     while vf <= volume_fraction:
-        particle, p_mask = im_strel()
+        bool_hole = random.binomial(1, holes_p)
+
+        particle, p_mask = im_strel(bool_hole)
         dilated_p_mask = morphology.binary_dilation(p_mask, ps_disk(padding))
         conv_im = spim.filters.convolve(mask, dilated_p_mask)
         free_spots = sp.argwhere(conv_im == 0)
@@ -126,30 +140,36 @@ def non_circular_particle(im, particle_max_r, volume_fraction = 0.5, holes_p = 0
         if(len(free_spots) <= 0):
             break
 
-        if d2:
-            choice = sp.random.randint(0, len(free_spots), size=1)
+        choice = sp.random.randint(0, len(free_spots), size=1)
 
+        if d2:
             [x, y] = free_spots[choice].flatten()
-            particle, p_mask = im_strel()
+
             im = _fit_strel_to_im_2d(im, particle, particle_max_r, x, y)
+            no_hole_mask = _fit_strel_to_im_2d(no_hole_mask, p_mask, particle_max_r, x, y)
             mask = _fit_strel_to_im_2d(mask, p_mask, particle_max_r, x, y)
 
             if(callback is not None):
-                callback(p_mask, particle_max_r, x, y)
+                callback(p_mask, particle_max_r, x, y, bool_hole)
 
         else:
             [x, y, z] = free_spots[choice].flatten()
 
             im = _fit_strel_to_im_3d(im, particle, particle_max_r, x, y, z)
+            no_hole_mask = _fit_strel_to_im_2d(im, p_mask, particle_max_r, x, y, z)
             mask = _fit_strel_to_im_3d(mask, p_mask, particle_max_r, x, y, z)
 
             if(callback is not None):
-                callback(p_mask, particle_max_r, x, y, z)
+                callback(p_mask, particle_max_r, x, y, z, bool_hole)
 
         vf = im.sum()/im.size
         i += 1
 
-    return im
+    if return_no_hole_mask :
+        return im, no_hole_mask
+    else:
+        return im
+
 
 def insert_shape(im, element, center=None, corner=None, value=1,
                  mode='overwrite'):
@@ -232,7 +252,7 @@ def insert_shape(im, element, center=None, corner=None, value=1,
 
 
 def RSA(im: array, radius: int, volume_fraction: int = 1,
-        mode: str = 'extended', callback: object = None):
+        mode: str = 'extended', mask: array = None, return_mask = True, callback: object = None):
     r"""
     Generates a sphere or disk packing using Random Sequential Addition
 
@@ -294,13 +314,20 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
     else:
         im_strel = ps_ball(radius)
         mask_strel = ps_ball(mrad)
-    if sp.any(im > 0):
+    if sp.any(im > 0) or (mask is not None):
+        if mask is None:
+            mask = im.copy()
+            prev_mask = im.copy()
+        else:
+            prev_mask = mask.copy()
+
         # Dilate existing objects by im_strel to remove pixels near them
         # from consideration for sphere placement
-        mask = ps.tools.fftmorphology(im > 0, im_strel > 0, mode='dilate')
+        mask = ps.tools.fftmorphology(mask > 0, im_strel > 0, mode='dilate')
         mask = mask.astype(int)
     else:
         mask = sp.zeros_like(im)
+        prev_mask = sp.zeros_like(im)
     if mode == 'contained':
         mask = _remove_edge(mask, radius)
     elif mode == 'extended':
@@ -317,6 +344,7 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
         if d2:
             [x, y] = free_spots[choice].flatten()
             im = _fit_strel_to_im_2d(im, im_strel, radius, x, y)
+            prev_mask = _fit_strel_to_im_2d(prev_mask, im_strel, radius, x, y)
             mask = _fit_strel_to_im_2d(mask, mask_strel, mrad, x, y)
 
             if(callback is not None):
@@ -325,6 +353,7 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
         else:
             [x, y, z] = free_spots[choice].flatten()
             im = _fit_strel_to_im_3d(im, im_strel, radius, x, y, z)
+            prev_mask = _fit_strel_to_im_3d(prev_mask, im_strel, radius, x, y, z)
             mask = _fit_strel_to_im_3d(mask, mask_strel, mrad, x, y, z)
 
             if(callback is not None):
@@ -333,8 +362,10 @@ def RSA(im: array, radius: int, volume_fraction: int = 1,
         free_spots = sp.argwhere(mask == 0)
         vf = im.sum()/im.size
         i += 1
-
-    return im
+    if return_mask:
+        return im, prev_mask
+    else:
+        return im
 
 
 def bundle_of_tubes(shape: List[int], spacing: int):
@@ -435,7 +466,8 @@ def polydisperse_spheres(shape: List[int], porosity: float, dist,
     for r in Rs:
         phi_im = im.sum() / sp.prod(shape)
         phi_corrected = 1 - (1 - phi_desired) / phi_im
-        temp = overlapping_spheres(shape=shape, radius=r, porosity=phi_corrected)
+        temp = overlapping_spheres(
+            shape=shape, radius=r, porosity=phi_corrected)
         im = im * temp
     return im
 
@@ -688,8 +720,8 @@ def overlapping_spheres(shape: List[int], radius: int, porosity: float,
     im = sp.random.random(size=shape)
 
     # Helper functions for calculating porosity: phi = g(f(N))
-    f = lambda N: spim.distance_transform_edt(im > N/bulk_vol) < radius
-    g = lambda im: 1 - im.sum() / sp.prod(shape)
+    def f(N): return spim.distance_transform_edt(im > N/bulk_vol) < radius
+    def g(im): return 1 - im.sum() / sp.prod(shape)
 
     # # Newton's method for getting image porosity match the given
     # w = 1.0                         # Damping factor
@@ -947,7 +979,8 @@ def line_segment(X0, X1):
     X0 = sp.around(X0).astype(int)
     X1 = sp.around(X1).astype(int)
     if len(X0) == 3:
-        L = sp.amax(sp.absolute([[X1[0]-X0[0]], [X1[1]-X0[1]], [X1[2]-X0[2]]])) + 1
+        L = sp.amax(sp.absolute(
+            [[X1[0]-X0[0]], [X1[1]-X0[1]], [X1[2]-X0[2]]])) + 1
         x = sp.rint(sp.linspace(X0[0], X1[0], L)).astype(int)
         y = sp.rint(sp.linspace(X0[1], X1[1], L)).astype(int)
         z = sp.rint(sp.linspace(X0[2], X1[2], L)).astype(int)
