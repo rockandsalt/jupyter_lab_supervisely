@@ -1,0 +1,3 @@
+[submodule "supervisely"]
+	path = supervisely
+	url = https://github.com/supervisely/supervisely.git
